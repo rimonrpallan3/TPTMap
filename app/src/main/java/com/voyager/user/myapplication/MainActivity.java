@@ -1,5 +1,7 @@
 package com.voyager.user.myapplication;
 
+import android.app.Activity;
+import android.content.Intent;
 import android.content.pm.PackageManager;
 
 import android.os.Bundle;
@@ -9,10 +11,12 @@ import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
 import android.widget.Toast;
 
+import com.google.android.gms.common.GooglePlayServicesNotAvailableException;
+import com.google.android.gms.common.GooglePlayServicesRepairableException;
 import com.google.android.gms.common.api.Status;
 import com.google.android.gms.location.places.Place;
+import com.google.android.gms.location.places.ui.PlaceAutocomplete;
 import com.google.android.gms.location.places.ui.PlaceAutocompleteFragment;
-import com.google.android.gms.location.places.ui.PlaceSelectionListener;
 import com.google.android.gms.maps.CameraUpdate;
 import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
@@ -35,8 +39,10 @@ public class MainActivity extends AppCompatActivity implements GoogleMap.OnMarke
     private Marker mPerth;
     private Marker mSydney;
     private Marker mBrisbane;
+    int PLACE_AUTOCOMPLETE_REQUEST_CODE = 1;
 
-    private String TAG = "";
+    private String TAG = "MainActivity";
+    Activity activity;
 
 
     private PlaceAutocompleteFragment autocompleteFragment;
@@ -53,12 +59,12 @@ public class MainActivity extends AppCompatActivity implements GoogleMap.OnMarke
 
     public void initialize() {
 
+        activity= this;
         SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager()
                 .findFragmentById(R.id.map);
         mapFragment.getMapAsync(this);
 
-        autocompleteFragment = (PlaceAutocompleteFragment)
-                getFragmentManager().findFragmentById(R.id.place_autocomplete_fragment);
+
 
     }
 
@@ -72,24 +78,51 @@ public class MainActivity extends AppCompatActivity implements GoogleMap.OnMarke
 
     public void setUpSearchBar(){
 
-        autocompleteFragment.setOnPlaceSelectedListener(new PlaceSelectionListener() {
-            @Override
-            public void onPlaceSelected(Place place) {
-                // TODO: Get info about the selected place.
-                Log.i(TAG, "Place: " + place.getName());
-            }
+//        autocompleteFragment.setOnPlaceSelectedListener(new PlaceSelectionListener() {
+//            @Override
+//            public void onPlaceSelected(Place place) {
+//                // TODO: Get info about the selected place.
+//                Log.i(TAG, "Place: " + place.getName());
+//            }
+//
+//            @Override
+//            public void onError(Status status) {
+//                // TODO: Handle the error.
+//                Log.i(TAG, "An error occurred: " + status);
+//            }
+//        });
+        try {
+            Intent intent =
+                    new PlaceAutocomplete.IntentBuilder(PlaceAutocomplete.MODE_FULLSCREEN)
+                            .build(this);
+            startActivityForResult(intent, PLACE_AUTOCOMPLETE_REQUEST_CODE);
+        } catch (GooglePlayServicesRepairableException e) {
+            // TODO: Handle the error.
+        } catch (GooglePlayServicesNotAvailableException e) {
+            // TODO: Handle the error.
+        }
+    }
 
-            @Override
-            public void onError(Status status) {
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (requestCode == PLACE_AUTOCOMPLETE_REQUEST_CODE) {
+            if (resultCode == RESULT_OK) {
+                Place place = PlaceAutocomplete.getPlace(this, data);
+                Log.i(TAG, "Place: " + place.getName());
+            } else if (resultCode == PlaceAutocomplete.RESULT_ERROR) {
+                Status status = PlaceAutocomplete.getStatus(this, data);
                 // TODO: Handle the error.
-                Log.i(TAG, "An error occurred: " + status);
+                Log.i(TAG, status.getStatusMessage());
+
+            } else if (resultCode == RESULT_CANCELED) {
+                // The user canceled the operation.
             }
-        });
+        }
     }
 
     public void setUpMap() {
 
-        googleMap.setMapType(GoogleMap.MAP_TYPE_HYBRID);
+        googleMap.setMapType(GoogleMap.MAP_TYPE_NORMAL);
 
         if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             // TODO: Consider calling
@@ -108,12 +141,6 @@ public class MainActivity extends AppCompatActivity implements GoogleMap.OnMarke
                 .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE))
                 .title("Perth"));
         mPerth.setTag(0);
-             CameraUpdate center=
-                CameraUpdateFactory.newLatLng(PERTH);
-        CameraUpdate zoom=CameraUpdateFactory.zoomTo(15);
-
-        googleMap.moveCamera(center);
-        googleMap.animateCamera(zoom);
 
         mSydney = googleMap.addMarker(new MarkerOptions()
                 .position(SYDNEY)
@@ -147,7 +174,8 @@ public class MainActivity extends AppCompatActivity implements GoogleMap.OnMarke
 
     @Override
     public boolean onMarkerClick(final Marker marker) {
-
+        CameraUpdate zoom= null;
+        CameraUpdate center = null;
             // Retrieve the data from the marker.
             Integer clickCount = (Integer) marker.getTag();
 
@@ -159,6 +187,26 @@ public class MainActivity extends AppCompatActivity implements GoogleMap.OnMarke
                         marker.getTitle() +
                                 " has been clicked " + clickCount + " times.",
                         Toast.LENGTH_SHORT).show();
+                if((marker.getTitle()== "Perth")){
+                    center= CameraUpdateFactory.newLatLng(PERTH);
+                    zoom=CameraUpdateFactory.zoomTo(20);
+                    googleMap.moveCamera(center);
+                    googleMap.animateCamera(zoom);
+                }else if((marker.getTitle()== "Brisbane")){
+                    center= CameraUpdateFactory.newLatLng(BRISBANE);
+                    zoom=CameraUpdateFactory.zoomTo(20);
+                    googleMap.moveCamera(center);
+                    googleMap.animateCamera(zoom);
+                }else if((marker.getTitle()== "Sydney")){
+                    center= CameraUpdateFactory.newLatLng(SYDNEY);
+                    zoom=CameraUpdateFactory.zoomTo(20);
+                    googleMap.moveCamera(center);
+                    googleMap.animateCamera(zoom);
+                }
+
+
+
+
             }
 
             // Return false to indicate that we have not consumed the event and that we wish
