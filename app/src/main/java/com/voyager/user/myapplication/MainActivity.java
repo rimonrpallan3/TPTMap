@@ -1,51 +1,161 @@
 package com.voyager.user.myapplication;
 
+import android.Manifest;
 import android.app.Activity;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentSender;
 import android.content.pm.PackageManager;
 
+import android.location.Criteria;
+import android.location.Geocoder;
+import android.net.Uri;
 import android.os.Bundle;
 
+import android.os.Handler;
+import android.provider.Settings;
+import android.support.annotation.NonNull;
+import android.support.annotation.Nullable;
+import android.support.design.widget.Snackbar;
 import android.support.v4.app.ActivityCompat;
+import android.support.v4.os.ResultReceiver;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
+import android.view.View;
+import android.widget.Button;
+import android.widget.ProgressBar;
+import android.widget.TextView;
 import android.widget.Toast;
 
+import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.GooglePlayServicesNotAvailableException;
 import com.google.android.gms.common.GooglePlayServicesRepairableException;
+import com.google.android.gms.common.api.ApiException;
+import com.google.android.gms.common.api.CommonStatusCodes;
+import com.google.android.gms.common.api.GoogleApiClient;
+import com.google.android.gms.common.api.ResolvableApiException;
 import com.google.android.gms.common.api.Status;
+import com.google.android.gms.location.FusedLocationProviderClient;
+import com.google.android.gms.location.LocationCallback;
+import com.google.android.gms.location.LocationRequest;
+import com.google.android.gms.location.LocationServices;
+import com.google.android.gms.location.LocationSettingsRequest;
+import com.google.android.gms.location.LocationSettingsResponse;
+import com.google.android.gms.location.LocationSettingsStatusCodes;
+import com.google.android.gms.location.SettingsClient;
 import com.google.android.gms.location.places.Place;
 import com.google.android.gms.location.places.ui.PlaceAutocomplete;
 import com.google.android.gms.location.places.ui.PlaceAutocompleteFragment;
 import com.google.android.gms.maps.CameraUpdate;
 import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
+import com.google.android.gms.maps.MapView;
 import com.google.android.gms.maps.OnMapReadyCallback;
-import com.google.android.gms.maps.SupportMapFragment;
 import com.google.android.gms.maps.model.BitmapDescriptorFactory;
 import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.Marker;
 import com.google.android.gms.maps.model.MarkerOptions;
+import com.google.android.gms.tasks.OnFailureListener;
+import com.google.android.gms.tasks.OnSuccessListener;
+import com.google.android.gms.tasks.Task;
 
+import android.location.Location;
+import android.location.LocationListener;
+import android.location.LocationManager;
 
-public class MainActivity extends AppCompatActivity implements GoogleMap.OnMarkerClickListener,OnMapReadyCallback {
+public class MainActivity extends AppCompatActivity implements GoogleMap.OnMarkerClickListener, OnMapReadyCallback, LocationListener, GoogleApiClient.ConnectionCallbacks, GoogleApiClient.OnConnectionFailedListener {
 
     private GoogleMap googleMap;
+    private MapView mMapView;
 
     private static final LatLng PERTH = new LatLng(-31.952854, 115.857342);
     private static final LatLng SYDNEY = new LatLng(-33.87365, 151.20689);
     private static final LatLng BRISBANE = new LatLng(-27.47093, 153.0235);
+    private LatLng CURRENTLOCATION = null;
 
     private Marker mPerth;
     private Marker mSydney;
     private Marker mBrisbane;
-    int PLACE_AUTOCOMPLETE_REQUEST_CODE = 1;
 
-    private String TAG = "MainActivity";
+
+    private Marker mCLocation;
+    int PLACE_AUTOCOMPLETE_REQUEST_CODE = 1;
+    Boolean mRequestingLocationUpdates = true;
+    String REQUESTING_LOCATION_UPDATES_KEY = "Update_KEY";
+
+    int REQUEST_CHECK_SETTINGS = 2;
+
+
     Activity activity;
 
+    LocationManager locationManager;
+    String mprovider;
+    double lat = 0;
+    double log = 0;
 
     private PlaceAutocompleteFragment autocompleteFragment;
+    LocationRequest mLocationRequest;
+
+
+    protected Location mLastKnownLocation;
+
+    private static final String TAG = MainActivity.class.getSimpleName();
+
+    private static final int REQUEST_PERMISSIONS_REQUEST_CODE = 34;
+
+    private static final String ADDRESS_REQUESTED_KEY = "address-request-pending";
+    private static final String LOCATION_ADDRESS_KEY = "location-address";
+
+    /**
+     * Provides access to the Fused Location Provider API.
+     */
+    private FusedLocationProviderClient mFusedLocationClient;
+
+    /**
+     * Represents a geographical location.
+     */
+    private Location mLastLocation;
+
+    /**
+     * Tracks whether the user has requested an address. Becomes true when the user requests an
+     * address and false when the address (or an error message) is delivered.
+     */
+    private boolean mAddressRequested;
+
+    /**
+     * The formatted location address.
+     */
+    private String mAddressOutput;
+
+    /**
+     * Receiver registered with this activity to get the response from FetchAddressIntentService.
+     */
+    private AddressResultReceiver mResultReceiver;
+
+
+
+    private static final String MAPVIEW_BUNDLE_KEY = "MapViewBundleKey";
+
+    Bundle mapViewBundle = null;
+    private LocationCallback mLocationCallback;
+
+    /**
+     * Displays the location address.
+     */
+    private TextView mLocationAddressTextView;
+
+    /**
+     * Visible while the address is being fetched.
+     */
+    private ProgressBar mProgressBar;
+
+    /**
+     * Kicks off the request to fetch an address when pressed.
+     */
+    private Button mFetchAddressButton;
+
+
+
 
 
     @Override
@@ -53,16 +163,204 @@ public class MainActivity extends AppCompatActivity implements GoogleMap.OnMarke
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        if (savedInstanceState != null) {
+            mapViewBundle = savedInstanceState.getBundle(MAPVIEW_BUNDLE_KEY);
+        }
+        updateValuesFromBundle(savedInstanceState);
+
         initialize();
+        createLocationRequest();
+        updateUIWidgets();
+
+    }
+
+    /**
+     * Return the current state of the permissions needed.
+     */
+    private boolean checkPermissions() {
+        int permissionState = ActivityCompat.checkSelfPermission(this,
+                android.Manifest.permission.ACCESS_FINE_LOCATION);
+        return permissionState == PackageManager.PERMISSION_GRANTED;
+    }
+
+
+    /**
+     * Runs when user clicks the Fetch Address button.
+     */
+    @SuppressWarnings("unused")
+    public void fetchAddressButtonHandler(View view) {
+        if (mLastLocation != null) {
+            startIntentService();
+            return;
+        }
+
+        // If we have not yet retrieved the user location, we process the user's request by setting
+        // mAddressRequested to true. As far as the user is concerned, pressing the Fetch Address button
+        // immediately kicks off the process of getting the address.
+        mAddressRequested = true;
+        updateUIWidgets();
+    }
+
+
+    private void requestPermissions() {
+        boolean shouldProvideRationale =
+                ActivityCompat.shouldShowRequestPermissionRationale(this,
+                        android.Manifest.permission.ACCESS_FINE_LOCATION);
+
+        // Provide an additional rationale to the user. This would happen if the user denied the
+        // request previously, but didn't check the "Don't ask again" checkbox.
+        if (shouldProvideRationale) {
+            Log.i(TAG, "Displaying permission rationale to provide additional context.");
+
+            showSnackbar(R.string.permission_rationale, android.R.string.ok,
+                    new View.OnClickListener() {
+                        @Override
+                        public void onClick(View view) {
+                            // Request permission
+                            ActivityCompat.requestPermissions(MainActivity.this,
+                                    new String[]{android.Manifest.permission.ACCESS_FINE_LOCATION},
+                                    REQUEST_PERMISSIONS_REQUEST_CODE);
+                        }
+                    });
+
+        } else {
+            Log.i(TAG, "Requesting permission");
+            // Request permission. It's possible this can be auto answered if device policy
+            // sets the permission in a given state or the user denied the permission
+            // previously and checked "Never ask again".
+            ActivityCompat.requestPermissions(MainActivity.this,
+                    new String[]{Manifest.permission.ACCESS_FINE_LOCATION},
+                    REQUEST_PERMISSIONS_REQUEST_CODE);
+        }
+    }
+
+
+//    /**
+//     * Shows a {@link Snackbar}.
+//     *
+//     * @param mainTextStringId The id for the string resource for the Snackbar text.
+//     * @param actionStringId   The text of the action item.
+//     * @param listener         The listener associated with the Snackbar action.
+//    private void showSnackbar(final int mainTextStringId, final int actionStringId,
+//                              View.OnClickListener listener) {
+//        Snackbar.make(findViewById(android.R.id.content),
+//                getString(mainTextStringId),
+//                Snackbar.LENGTH_INDEFINITE)
+//                .setAction(getString(actionStringId), listener).show();
+//    }
+//
+//*/
+
+    /**
+     * Toggles the visibility of the progress bar. Enables or disables the Fetch Address button.
+     */
+    private void updateUIWidgets() {
+        if (mAddressRequested) {
+
+            System.out.println("data fetching part");
+        } else {
+
+            System.out.println("data need to fetch part using button or any triggger " +
+                    "");
+        }
+    }
+
+    /**
+     * Shows a {@link Snackbar}.
+     *
+     * @param mainTextStringId The id for the string resource for the Snackbar text.
+     * @param actionStringId   The text of the action item.
+     * @param listener         The listener associated with the Snackbar action.
+     */
+    private void showSnackbar(final int mainTextStringId, final int actionStringId,
+                              View.OnClickListener listener) {
+        Snackbar.make(findViewById(android.R.id.content),
+                getString(mainTextStringId),
+                Snackbar.LENGTH_INDEFINITE)
+                .setAction(getString(actionStringId), listener).show();
+    }
+
+
+    /**
+     * Shows a toast with the given text.
+     */
+    private void showToast(String text) {
+        Toast.makeText(this, text, Toast.LENGTH_SHORT).show();
+    }
+
+    protected void startIntentService() {
+        Intent intent = new Intent(this, FetchAddressIntentService.class);
+        intent.putExtra(Constants.RECEIVER, mResultReceiver);
+        intent.putExtra(Constants.LOCATION_DATA_EXTRA, mLastKnownLocation);
+        startService(intent);
+    }
+
+
+    private void updateValuesFromBundle(Bundle savedInstanceState) {
+     /*   // Update the value of mRequestingLocationUpdates from the Bundle.
+        if (savedInstanceState != null) {
+            if (savedInstanceState.keySet().contains(REQUESTING_LOCATION_UPDATES_KEY)) {
+                mRequestingLocationUpdates = savedInstanceState.getBoolean(
+                        REQUESTING_LOCATION_UPDATES_KEY);
+            }
+        }
+
+        // Update UI to match restored state
+        System.out.println("updateValuesFromBundle----------------------------1");
+        updateUI();*/
+        if (savedInstanceState != null) {
+            System.out.println("updateValuesFromBundle_NonNull----------------------------1");
+
+            // Check savedInstanceState to see if the address was previously requested.
+            if (savedInstanceState.keySet().contains(ADDRESS_REQUESTED_KEY)) {
+                mAddressRequested = savedInstanceState.getBoolean(ADDRESS_REQUESTED_KEY);
+            }
+            // Check savedInstanceState to see if the location address string was previously found
+            // and stored in the Bundle. If it was found, display the address string in the UI.
+            if (savedInstanceState.keySet().contains(LOCATION_ADDRESS_KEY)) {
+                mAddressOutput = savedInstanceState.getString(LOCATION_ADDRESS_KEY);
+                //displayAddressOutput();
+            }
+        }
+    }
+
+
+
+    @Override
+    public void onSaveInstanceState(Bundle outState) {
+        outState.putBoolean(REQUESTING_LOCATION_UPDATES_KEY,
+                mRequestingLocationUpdates);
+        super.onSaveInstanceState(outState);
+
+        Bundle mapViewBundle = outState.getBundle(MAPVIEW_BUNDLE_KEY);
+        if (mapViewBundle == null) {
+            mapViewBundle = new Bundle();
+            outState.putBundle(MAPVIEW_BUNDLE_KEY, mapViewBundle);
+        }
+
+        mMapView.onSaveInstanceState(mapViewBundle);
+
     }
 
 
     public void initialize() {
 
-        activity= this;
-        SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager()
-                .findFragmentById(R.id.map);
-        mapFragment.getMapAsync(this);
+        activity = this;
+
+        mMapView = (MapView) findViewById(R.id.map);
+        mMapView.onCreate(mapViewBundle);
+        mMapView.getMapAsync(this);
+
+        locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+        Criteria criteria = new Criteria();
+        mprovider = locationManager.getBestProvider(criteria, false);
+        mFusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
+
+        mResultReceiver = new AddressResultReceiver(new Handler());
+
+        // Set defaults, then update using values stored in the Bundle.
+        mAddressRequested = false;
+        mAddressOutput = "";
 
 
 
@@ -71,26 +369,17 @@ public class MainActivity extends AppCompatActivity implements GoogleMap.OnMarke
     @Override
     public void onMapReady(GoogleMap map) {
         googleMap = map;
+        map.addMarker(new MarkerOptions().position(new LatLng(0, 0)).title("Marker"));
 
         setUpMap();
+    }
+
+    public void searchLoc(View v) {
         setUpSearchBar();
     }
 
-    public void setUpSearchBar(){
+    public void setUpSearchBar() {
 
-//        autocompleteFragment.setOnPlaceSelectedListener(new PlaceSelectionListener() {
-//            @Override
-//            public void onPlaceSelected(Place place) {
-//                // TODO: Get info about the selected place.
-//                Log.i(TAG, "Place: " + place.getName());
-//            }
-//
-//            @Override
-//            public void onError(Status status) {
-//                // TODO: Handle the error.
-//                Log.i(TAG, "An error occurred: " + status);
-//            }
-//        });
         try {
             Intent intent =
                     new PlaceAutocomplete.IntentBuilder(PlaceAutocomplete.MODE_FULLSCREEN)
@@ -120,9 +409,55 @@ public class MainActivity extends AppCompatActivity implements GoogleMap.OnMarke
         }
     }
 
+    private void fetchAddressButtonHander(View view) {
+        if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            // TODO: Consider calling
+            //    ActivityCompat#requestPermissions
+            // here to request the missing permissions, and then overriding
+            //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
+            //                                          int[] grantResults)
+            // to handle the case where the user grants the permission. See the documentation
+            // for ActivityCompat#requestPermissions for more details.
+            return;
+        }
+        mFusedLocationClient.getLastLocation()
+                .addOnSuccessListener(this, new OnSuccessListener<Location>() {
+                    @Override
+                    public void onSuccess(Location location) {
+                        mLastKnownLocation = location;
+
+                        getAddress();
+                        System.out.println("Current_Location_address----------------------------"+mAddressOutput);
+
+                        updateUI();
+                    }
+                });
+    }
+
+
     public void setUpMap() {
 
-        googleMap.setMapType(GoogleMap.MAP_TYPE_NORMAL);
+      /*  if (mprovider != null && !mprovider.equals("")) {
+
+            if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                // TODO: Consider calling
+                //    ActivityCompat#requestPermissions
+                // here to request the missing permissions, and then overriding
+                //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
+                //                                          int[] grantResults)
+                // to handle the case where the user grants the permission. See the documentation
+                // for ActivityCompat#requestPermissions for more details.
+                return;
+            }
+            Location location = locationManager.getLastKnownLocation(mprovider);
+            locationManager.requestLocationUpdates(mprovider, 15000, 1, this);
+
+            if (location != null) {
+                onLocationChanged(location);
+            } else {
+                Toast.makeText(getBaseContext(), "No Location Provider Found Check Your Code", Toast.LENGTH_SHORT).show();
+            }
+        }*/
 
         if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             // TODO: Consider calling
@@ -134,42 +469,285 @@ public class MainActivity extends AppCompatActivity implements GoogleMap.OnMarke
             // for ActivityCompat#requestPermissions for more details.
             return;
         }
-        // Add some markers to the map, and add a data object to each marker.
-        mPerth = googleMap.addMarker(new MarkerOptions()
-                .position(PERTH)
-                .draggable(true)
-                .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE))
-                .title("Perth"));
-        mPerth.setTag(0);
+        mFusedLocationClient.getLastLocation()
+                .addOnSuccessListener(this, new OnSuccessListener<Location>() {
+                    @Override
+                    public void onSuccess(final Location location) {
+                        // Got last known location. In some rare situations this can be null.
 
-        mSydney = googleMap.addMarker(new MarkerOptions()
-                .position(SYDNEY)
-                .draggable(true)
-                .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE))
-                .title("Sydney"));
-        mSydney.setTag(0);
+                        if (location != null) {
+                            mLastKnownLocation =location;
+                            lat = location.getLatitude();
+                            log = location.getLongitude();
+                            System.out.println("CTL_lat-------" + lat + ",  CTL_log--------" + log);
+                            CURRENTLOCATION = new LatLng(lat, log);
 
-        mBrisbane = googleMap.addMarker(new MarkerOptions()
-                .position(BRISBANE)
-                .draggable(true)
-                .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE))
-                .title("Brisbane"));
-        mBrisbane.setTag(0);
+                            float zoomLevel = (float) 16.0; //This goes up to 21
 
-        // Set a listener for marker click.
-        googleMap.setOnMarkerClickListener(this);
-        googleMap.setMyLocationEnabled(true);
-        googleMap.setTrafficEnabled(true);
-        googleMap.setIndoorEnabled(true);
-        googleMap.setBuildingsEnabled(true);
-        googleMap.getUiSettings().setZoomControlsEnabled(true);
-    /*    CameraUpdate center=
-                CameraUpdateFactory.newLatLng(new LatLng(40.76793169992044,
-                        -73.98180484771729));
-        CameraUpdate zoom=CameraUpdateFactory.zoomTo(15);
 
-        googleMap.moveCamera(center);
-        googleMap.animateCamera(zoom);*/
+                            CameraUpdate zoom = CameraUpdateFactory.zoomTo(15);
+                            mCLocation = googleMap.addMarker(new MarkerOptions()
+                                    .position(CURRENTLOCATION)
+                                    .draggable(true)
+                                    .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE))
+                                    .title("CurrentLocation"));
+                            mCLocation.setTag(0);
+
+                            googleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(CURRENTLOCATION, zoomLevel));
+                            googleMap.animateCamera(zoom);
+                            getAddress();
+                            System.out.println("Current_Location_address----------------------------"+mAddressOutput);
+
+                        }
+
+
+                    }
+                });
+
+
+        LocationSettingsRequest.Builder builder = new LocationSettingsRequest.Builder()
+                .addLocationRequest(mLocationRequest);
+
+
+        SettingsClient client = LocationServices.getSettingsClient(this);
+        Task<LocationSettingsResponse> task = client.checkLocationSettings(builder.build());
+
+        task.addOnSuccessListener(this, new OnSuccessListener<LocationSettingsResponse>() {
+            @Override
+            public void onSuccess(LocationSettingsResponse locationSettingsResponse) {
+                // All location settings are satisfied. The client can initialize
+                // location requests here.
+                // ...
+                locationSettingsResponse.getLocationSettingsStates();
+                System.out.println("---------------getLocationSettingsStates : " + locationSettingsResponse.getLocationSettingsStates());
+            }
+        });
+
+        task.addOnFailureListener(this, new OnFailureListener() {
+            @Override
+            public void onFailure(@NonNull Exception e) {
+                int statusCode = ((ApiException) e).getStatusCode();
+                switch (statusCode) {
+                    case CommonStatusCodes.RESOLUTION_REQUIRED:
+                        // Location settings are not satisfied, but this can be fixed
+                        // by showing the user a dialog.
+                        try {
+                            // Show the dialog by calling startResolutionForResult(),
+                            // and check the result in onActivityResult().
+                            ResolvableApiException resolvable = (ResolvableApiException) e;
+                            resolvable.startResolutionForResult(MainActivity.this, REQUEST_CHECK_SETTINGS);
+                        } catch (IntentSender.SendIntentException sendEx) {
+                            // Ignore the error.
+                        }
+                        break;
+                    case LocationSettingsStatusCodes.SETTINGS_CHANGE_UNAVAILABLE:
+                        // Location settings are not satisfied. However, we have no way
+                        // to fix the settings so we won't show the dialog.
+                        break;
+                }
+            }
+        });
+
+    }
+
+    public void updateUI() {
+        if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            // TODO: Consider calling
+            //    ActivityCompat#requestPermissions
+            // here to request the missing permissions, and then overriding
+            //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
+            //                                          int[] grantResults)
+            // to handle the case where the user grants the permission. See the documentation
+            // for ActivityCompat#requestPermissions for more details.
+            return;
+        }
+
+        mFusedLocationClient.getLastLocation()
+                .addOnSuccessListener(this, new OnSuccessListener<Location>() {
+                    @Override
+                    public void onSuccess(final Location location) {
+                        // Got last known location. In some rare situations this can be null.
+
+                        if (location != null) {
+                            mLastKnownLocation =location;
+                            lat = location.getLatitude();
+                            log = location.getLongitude();
+                            System.out.println("CTL_lat-------" + lat + ",  CTL_log--------" + log);
+                            CURRENTLOCATION = new LatLng(lat, log);
+
+                            float zoomLevel = (float) 16.0; //This goes up to 21
+
+
+                            CameraUpdate zoom = CameraUpdateFactory.zoomTo(15);
+                            mCLocation = googleMap.addMarker(new MarkerOptions()
+                                    .position(CURRENTLOCATION)
+                                    .draggable(true)
+                                    .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE))
+                                    .title("CurrentLocation"));
+                            mCLocation.setTag(0);
+
+                            googleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(CURRENTLOCATION, zoomLevel));
+                            googleMap.animateCamera(zoom);
+
+                            getAddress();
+                            System.out.println("Current_Location_addressUpDateUI----------------------------"+mAddressOutput);
+
+                           // updateUI();
+
+                        }
+
+
+                    }
+                });
+
+      /*  mLocationCallback = new LocationCallback() {
+            @Override
+            public void onLocationResult(LocationResult locationResult) {
+                for (Location location : locationResult.getLocations()) {
+                    // Update UI with location data
+                    // ...
+
+                    if (location != null) {
+                        mLastKnownLocation = location;
+                        lat = location.getLatitude();
+                        log = location.getLongitude();
+                        System.out.println("updateUI_CTL_lat-------" + lat + ",  updateUI_CTL_log--------" + log);
+                        CURRENTLOCATION = new LatLng(lat, log);
+
+                        float zoomLevel = (float) 16.0; //This goes up to 2        1
+
+
+                        CameraUpdate zoom = CameraUpdateFactory.zoomTo(15);
+                        mCLocation = googleMap.addMarker(new MarkerOptions()
+                                .position(CURRENTLOCATION)
+                                .draggable(true)
+                                .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE))
+                                .title("UPDATEDCurrentLocation"));
+                        mCLocation.setTag(0);
+
+                        googleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(CURRENTLOCATION, zoomLevel));
+                        googleMap.animateCamera(zoom);
+                    }
+                }
+            }
+        };*/
+
+
+    }
+
+
+    protected void createLocationRequest() {
+        mLocationRequest = new LocationRequest();
+        mLocationRequest.setInterval(10000);
+        mLocationRequest.setFastestInterval(5000);
+        mLocationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
+    }
+
+    private void startLocationUpdates() {
+        if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            // TODO: Consider calling
+            //    ActivityCompat#requestPermissions
+            // here to request the missing permissions, and then overriding
+            //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
+            //                                          int[] grantResults)
+            // to handle the case where the user grants the permission. See the documentation
+            // for ActivityCompat#requestPermissions for more details.
+            return;
+        }
+        if(mLocationCallback != null) {
+            mFusedLocationClient.requestLocationUpdates(mLocationRequest, mLocationCallback, null /* Looper */);
+        }
+    }
+
+    private void stopLocationUpdates() {
+        if(mLocationCallback!=null){
+            mFusedLocationClient.removeLocationUpdates(mLocationCallback);
+        }
+    }
+
+
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        mMapView.onResume();
+        if (mRequestingLocationUpdates) {
+            startLocationUpdates();
+        }
+    }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        mMapView.onStart();
+        if (!checkPermissions()) {
+            requestPermissions();
+        } else {
+            getAddress();
+        }
+    }
+
+    /**
+     * Gets the address for the last known location.
+     */
+    @SuppressWarnings("MissingPermission")
+    private void getAddress() {
+        mFusedLocationClient.getLastLocation()
+                .addOnSuccessListener(this, new OnSuccessListener<Location>() {
+                    @Override
+                    public void onSuccess(Location location) {
+                        if (location == null) {
+                            Log.w(TAG, "onSuccess:null");
+                            return;
+                        }
+
+                        mLastLocation = location;
+
+                        // Determine whether a Geocoder is available.
+                        if (!Geocoder.isPresent()) {
+                            showSnackbar(getString(R.string.no_geocoder_available));
+                            return;
+                        }
+
+                        // If the user pressed the fetch address button before we had the location,
+                        // this will be set to true indicating that we should kick off the intent
+                        // service after fetching the location.
+                        if (mAddressRequested) {
+                            startIntentService();
+                        }
+                    }
+                })
+                .addOnFailureListener(this, new OnFailureListener() {
+                    @Override
+                    public void onFailure(@NonNull Exception e) {
+                        Log.w(TAG, "getLastLocation:onFailure", e);
+                    }
+                });
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        mMapView.onStop();
+    }
+
+    @Override
+    protected void onPause() {
+        mMapView.onPause();
+        super.onPause();
+        stopLocationUpdates();
+    }
+
+    @Override
+    protected void onDestroy() {
+        mMapView.onDestroy();
+        super.onDestroy();
+    }
+
+    @Override
+    public void onLowMemory() {
+        super.onLowMemory();
+        mMapView.onLowMemory();
     }
 
     @Override
@@ -203,10 +781,6 @@ public class MainActivity extends AppCompatActivity implements GoogleMap.OnMarke
                     googleMap.moveCamera(center);
                     googleMap.animateCamera(zoom);
                 }
-
-
-
-
             }
 
             // Return false to indicate that we have not consumed the event and that we wish
@@ -214,4 +788,139 @@ public class MainActivity extends AppCompatActivity implements GoogleMap.OnMarke
             // marker is centered and for the marker's info window to open, if it has one).
         return false;
     }
+
+
+
+    @Override
+    public void onLocationChanged(Location location) {
+      // pls add the location change
+
+        startLocationUpdates();
+    }
+
+    @Override
+    public void onStatusChanged(String provider, int status, Bundle extras) {
+
+    }
+
+    @Override
+    public void onProviderEnabled(String provider) {
+
+    }
+
+    @Override
+    public void onProviderDisabled(String provider) {
+
+    }
+
+    @Override
+    public void onConnected(@Nullable Bundle bundle) {
+
+    }
+
+    @Override
+    public void onConnectionSuspended(int i) {
+
+    }
+
+    @Override
+    public void onConnectionFailed(@NonNull ConnectionResult connectionResult) {
+
+    }
+
+    private void displayAddressOutput() {
+        //mLocationAddressTextView.setText(mAddressOutput);
+        System.out.println("displayAddressOutput-------------  "+ mAddressOutput);
+
+    }
+
+
+    /**
+     * Shows a {@link Snackbar} using {@code text}.
+     *
+     * @param text The Snackbar text.
+     */
+    private void showSnackbar(final String text) {
+        View container = findViewById(android.R.id.content);
+        if (container != null) {
+            Snackbar.make(container, text, Snackbar.LENGTH_LONG).show();
+        }
+    }
+
+
+    class AddressResultReceiver extends ResultReceiver {
+        public AddressResultReceiver(Handler handler) {
+            super(handler);
+        }
+
+        @Override
+        protected void onReceiveResult(int resultCode, Bundle resultData) {
+
+            // Display the address string
+            // or an error message sent from the intent service.
+            mAddressOutput = resultData.getString(Constants.RESULT_DATA_KEY);
+            //displayAddressOutput();
+            System.out.println("---------------mAddressOutput : " + mAddressOutput);
+            // Show a toast message if an address was found.
+            if (resultCode == Constants.SUCCESS_RESULT) {
+                showToast(getString(R.string.address_found));
+            }
+
+            // Reset. Enable the Fetch Address button and stop showing the progress bar.
+            mAddressRequested = false;
+            updateUIWidgets();
+
+        }
+        /**
+         * Updates the address in the UI.
+         */
+
+    }
+
+    /**
+     * Callback received when a permissions request has been completed.
+     */
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions,
+                                           @NonNull int[] grantResults) {
+        Log.i(TAG, "onRequestPermissionResult");
+        if (requestCode == REQUEST_PERMISSIONS_REQUEST_CODE) {
+            if (grantResults.length <= 0) {
+                // If user interaction was interrupted, the permission request is cancelled and you
+                // receive empty arrays.
+                Log.i(TAG, "User interaction was cancelled.");
+            } else if (grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                // Permission granted.
+                getAddress();
+            } else {
+                // Permission denied.
+
+                // Notify the user via a SnackBar that they have rejected a core permission for the
+                // app, which makes the Activity useless. In a real app, core permissions would
+                // typically be best requested during a welcome-screen flow.
+
+                // Additionally, it is important to remember that a permission might have been
+                // rejected without asking the user for permission (device policy or "Never ask
+                // again" prompts). Therefore, a user interface affordance is typically implemented
+                // when permissions are denied. Otherwise, your app could appear unresponsive to
+                // touches or interactions which have required permissions.
+                showSnackbar(R.string.permission_denied_explanation, R.string.settings,
+                        new View.OnClickListener() {
+                            @Override
+                            public void onClick(View view) {
+                                // Build intent that displays the App settings screen.
+                                Intent intent = new Intent();
+                                intent.setAction(
+                                        Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+                                Uri uri = Uri.fromParts("package",
+                                        BuildConfig.APPLICATION_ID, null);
+                                intent.setData(uri);
+                                intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                                startActivity(intent);
+                            }
+                        });
+            }
+        }
+    }
+
 }
