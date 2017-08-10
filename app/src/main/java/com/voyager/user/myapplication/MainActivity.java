@@ -2,9 +2,11 @@ package com.voyager.user.myapplication;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentSender;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 
 import android.location.Criteria;
@@ -13,6 +15,7 @@ import android.net.Uri;
 import android.os.Bundle;
 
 import android.os.Handler;
+import android.preference.PreferenceManager;
 import android.provider.Settings;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
@@ -36,6 +39,9 @@ import com.google.android.gms.common.api.GoogleApiClient;
 import com.google.android.gms.common.api.ResolvableApiException;
 import com.google.android.gms.common.api.Status;
 import com.google.android.gms.location.FusedLocationProviderClient;
+import com.google.android.gms.location.Geofence;
+import com.google.android.gms.location.GeofencingClient;
+import com.google.android.gms.location.GeofencingRequest;
 import com.google.android.gms.location.LocationCallback;
 import com.google.android.gms.location.LocationRequest;
 import com.google.android.gms.location.LocationServices;
@@ -55,6 +61,7 @@ import com.google.android.gms.maps.model.BitmapDescriptorFactory;
 import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.Marker;
 import com.google.android.gms.maps.model.MarkerOptions;
+import com.google.android.gms.tasks.OnCompleteListener;
 import com.google.android.gms.tasks.OnFailureListener;
 import com.google.android.gms.tasks.OnSuccessListener;
 import com.google.android.gms.tasks.Task;
@@ -63,7 +70,10 @@ import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
 
-public class MainActivity extends AppCompatActivity implements GoogleMap.OnMarkerClickListener, OnMapReadyCallback, LocationListener, GoogleApiClient.ConnectionCallbacks, GoogleApiClient.OnConnectionFailedListener {
+import java.util.ArrayList;
+import java.util.Map;
+
+public class MainActivity extends AppCompatActivity implements GoogleMap.OnMarkerClickListener, OnMapReadyCallback, LocationListener, GoogleApiClient.ConnectionCallbacks, GoogleApiClient.OnConnectionFailedListener ,OnCompleteListener<Void> {
 
     private GoogleMap googleMap;
     private MapView mMapView;
@@ -103,6 +113,68 @@ public class MainActivity extends AppCompatActivity implements GoogleMap.OnMarke
 
     private static final int REQUEST_PERMISSIONS_REQUEST_CODE = 34;
 
+    /**
+     * Runs when the result of calling {@link #addGeofences()} and/or {@link #removeGeofences()}
+     * is available.
+     * @param task the resulting Task, containing either a result or error.
+     */
+    @Override
+    public void onComplete(@NonNull Task<Void> task) {
+        mPendingGeofenceTask = PendingGeofenceTask.NONE;
+        if (task.isSuccessful()) {
+            updateGeofencesAdded(!getGeofencesAdded());
+            setButtonsEnabledState();
+
+            int messageId = getGeofencesAdded() ? R.string.geofences_added :
+                    R.string.geofences_removed;
+            Toast.makeText(this, getString(messageId), Toast.LENGTH_SHORT).show();
+        } else {
+            // Get the status code for the error and log it using a user-friendly message.
+            String errorMessage = GeofenceErrorMessages.getErrorString(this, task.getException());
+            Log.w(TAG, errorMessage);
+        }
+    }
+
+    /**
+     * Returns true if geofences were added, otherwise false.
+     */
+    private boolean getGeofencesAdded() {
+        return PreferenceManager.getDefaultSharedPreferences(this).getBoolean(
+                Constants.GEOFENCES_ADDED_KEY, false);
+    }
+
+
+    /**
+     * Stores whether geofences were added ore removed in {@link SharedPreferences};
+     *
+     * @param added Whether geofences were added or removed.
+     */
+    private void updateGeofencesAdded(boolean added) {
+        PreferenceManager.getDefaultSharedPreferences(this)
+                .edit()
+                .putBoolean(Constants.GEOFENCES_ADDED_KEY, added)
+                .apply();
+    }
+
+
+    /**
+     * Tracks whether the user requested to add or remove geofences, or to do neither.
+     */
+    private enum PendingGeofenceTask {
+        ADD, REMOVE, NONE
+    }
+
+    /**
+     * The list of geofences used in this sample.
+     */
+    private ArrayList<Geofence> mGeofenceList;
+
+    /**
+     * Used when requesting to add or remove geofences.
+     */
+    private PendingIntent mGeofencePendingIntent;
+
+
     private static final String ADDRESS_REQUESTED_KEY = "address-request-pending";
     private static final String LOCATION_ADDRESS_KEY = "location-address";
 
@@ -115,6 +187,14 @@ public class MainActivity extends AppCompatActivity implements GoogleMap.OnMarke
      * Represents a geographical location.
      */
     private Location mLastLocation;
+
+
+    // Buttons for kicking off the process of adding or removing geofences.
+    private Button mAddGeofencesButton;
+    private Button mRemoveGeofencesButton;
+
+    private PendingGeofenceTask mPendingGeofenceTask = PendingGeofenceTask.NONE;
+
 
     /**
      * Tracks whether the user has requested an address. Becomes true when the user requests an
@@ -153,6 +233,11 @@ public class MainActivity extends AppCompatActivity implements GoogleMap.OnMarke
      * Kicks off the request to fetch an address when pressed.
      */
     private Button mFetchAddressButton;
+
+
+    // GeofencingClient ------------------------------------------------------
+
+    private GeofencingClient mGeofencingClient;
 
 
 
@@ -199,6 +284,20 @@ public class MainActivity extends AppCompatActivity implements GoogleMap.OnMarke
         // immediately kicks off the process of getting the address.
         mAddressRequested = true;
         updateUIWidgets();
+    }
+
+
+    /**
+     * Adds geofences, which sets alerts to be notified when the device enters or exits one of the
+     * specified geofences. Handles the success or failure results returned by addGeofences().
+     */
+    public void addGeofencesButtonHandler(View view) {
+        if (!checkPermissions()) {
+            mPendingGeofenceTask = PendingGeofenceTask.ADD;
+            requestPermissions();
+            return;
+        }
+        addGeofences();
     }
 
 
@@ -363,7 +462,116 @@ public class MainActivity extends AppCompatActivity implements GoogleMap.OnMarke
         mAddressOutput = "";
 
 
+        mGeofencingClient = LocationServices.getGeofencingClient(this);
 
+
+        // Get the UI widgets.
+        mAddGeofencesButton = (Button) findViewById(R.id.add_geofences_button);
+        mRemoveGeofencesButton = (Button) findViewById(R.id.remove_geofences_button);
+
+        // Empty list for storing geofences.
+        mGeofenceList = new ArrayList<>();
+
+        // Initially set the PendingIntent used in addGeofences() and removeGeofences() to null.
+        mGeofencePendingIntent = null;
+
+        setButtonsEnabledState();
+
+        // Get the geofences used. Geofence data is hard coded in this sample.
+        populateGeofenceList();
+
+        mGeofencingClient = LocationServices.getGeofencingClient(this);
+
+
+
+    }
+
+    /**
+     * Removes geofences, which stops further notifications when the device enters or exits
+     * previously registered geofences.
+     */
+    public void removeGeofencesButtonHandler(View view) {
+        if (!checkPermissions()) {
+            mPendingGeofenceTask = PendingGeofenceTask.REMOVE;
+            requestPermissions();
+            return;
+        }
+        removeGeofences();
+    }
+
+    /**
+     * Removes geofences. This method should be called after the user has granted the location
+     * permission.
+     */
+    @SuppressWarnings("MissingPermission")
+    private void removeGeofences() {
+        if (!checkPermissions()) {
+            showSnackbar(getString(R.string.insufficient_permissions));
+            return;
+        }
+
+        mGeofencingClient.removeGeofences(getGeofencePendingIntent()).addOnCompleteListener(this);
+    }
+
+
+    /**
+     * Performs the geofencing task that was pending until location permission was granted.
+     */
+    private void performPendingGeofenceTask() {
+        if (mPendingGeofenceTask == PendingGeofenceTask.ADD) {
+            addGeofences();
+        } else if (mPendingGeofenceTask == PendingGeofenceTask.REMOVE) {
+            removeGeofences();
+        }
+    }
+
+    /**
+     * This sample hard codes geofence data. A real app might dynamically create geofences based on
+     * the user's location.
+     */
+    private void populateGeofenceList() {
+        for (Map.Entry<String, LatLng> entry : Constants.BAY_AREA_LANDMARKS.entrySet()) {
+
+            mGeofenceList.add(new Geofence.Builder()
+                    // Set the request ID of the geofence. This is a string to identify this
+                    // geofence.
+                    .setRequestId(entry.getKey())
+
+                    // Set the circular region of this geofence.
+                    .setCircularRegion(
+                            entry.getValue().latitude,
+                            entry.getValue().longitude,
+                            Constants.GEOFENCE_RADIUS_IN_METERS
+                    )
+
+                    // Set the expiration duration of the geofence. This geofence gets automatically
+                    // removed after this period of time.
+                    .setExpirationDuration(Constants.GEOFENCE_EXPIRATION_IN_MILLISECONDS)
+
+                    // Set the transition types of interest. Alerts are only generated for these
+                    // transition. We track entry and exit transitions in this sample.
+                    .setTransitionTypes(Geofence.GEOFENCE_TRANSITION_ENTER |
+                            Geofence.GEOFENCE_TRANSITION_EXIT)
+
+                    // Create the geofence.
+                    .build());
+        }
+    }
+
+
+    /**
+     * Ensures that only one button is enabled at any time. The Add Geofences button is enabled
+     * if the user hasn't yet added geofences. The Remove Geofences button is enabled if the
+     * user has added geofences.
+     */
+    private void setButtonsEnabledState() {
+        if (getGeofencesAdded()) {
+            mAddGeofencesButton.setEnabled(false);
+            mRemoveGeofencesButton.setEnabled(true);
+        } else {
+            mAddGeofencesButton.setEnabled(true);
+            mRemoveGeofencesButton.setEnabled(false);
+        }
     }
 
     @Override
@@ -684,8 +892,63 @@ public class MainActivity extends AppCompatActivity implements GoogleMap.OnMarke
             requestPermissions();
         } else {
             getAddress();
+            performPendingGeofenceTask();
         }
     }
+
+    /**
+     * Adds geofences. This method should be called after the user has granted the location
+     * permission.
+     */
+    @SuppressWarnings("MissingPermission")
+    private void addGeofences() {
+        if (!checkPermissions()) {
+            showSnackbar(getString(R.string.insufficient_permissions));
+            return;
+        }
+
+        mGeofencingClient.addGeofences(getGeofencingRequest(), getGeofencePendingIntent())
+                .addOnCompleteListener(this);
+    }
+
+
+    /**
+     * Gets a PendingIntent to send with the request to add or remove Geofences. Location Services
+     * issues the Intent inside this PendingIntent whenever a geofence transition occurs for the
+     * current list of geofences.
+     *
+     * @return A PendingIntent for the IntentService that handles geofence transitions.
+     */
+    private PendingIntent getGeofencePendingIntent() {
+        // Reuse the PendingIntent if we already have it.
+        if (mGeofencePendingIntent != null) {
+            return mGeofencePendingIntent;
+        }
+        Intent intent = new Intent(this, GeofenceTransitionsIntentService.class);
+        // We use FLAG_UPDATE_CURRENT so that we get the same pending intent back when calling
+        // addGeofences() and removeGeofences().
+        return PendingIntent.getService(this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT);
+    }
+
+    /**
+     * Builds and returns a GeofencingRequest. Specifies the list of geofences to be monitored.
+     * Also specifies how the geofence notifications are initially triggered.
+     */
+    private GeofencingRequest getGeofencingRequest() {
+        GeofencingRequest.Builder builder = new GeofencingRequest.Builder();
+
+        // The INITIAL_TRIGGER_ENTER flag indicates that geofencing service should trigger a
+        // GEOFENCE_TRANSITION_ENTER notification when the geofence is added and if the device
+        // is already inside that geofence.
+        builder.setInitialTrigger(GeofencingRequest.INITIAL_TRIGGER_ENTER);
+
+        // Add the geofences to be monitored by geofencing service.
+        builder.addGeofences(mGeofenceList);
+
+        // Return a GeofencingRequest.
+        return builder.build();
+    }
+
 
     /**
      * Gets the address for the last known location.
