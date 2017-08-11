@@ -44,6 +44,7 @@ import com.google.android.gms.location.GeofencingClient;
 import com.google.android.gms.location.GeofencingRequest;
 import com.google.android.gms.location.LocationCallback;
 import com.google.android.gms.location.LocationRequest;
+import com.google.android.gms.location.LocationResult;
 import com.google.android.gms.location.LocationServices;
 import com.google.android.gms.location.LocationSettingsRequest;
 import com.google.android.gms.location.LocationSettingsResponse;
@@ -71,6 +72,7 @@ import android.location.LocationListener;
 import android.location.LocationManager;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Map;
 
 public class MainActivity extends AppCompatActivity implements GoogleMap.OnMarkerClickListener, OnMapReadyCallback, LocationListener, GoogleApiClient.ConnectionCallbacks, GoogleApiClient.OnConnectionFailedListener ,OnCompleteListener<Void> {
@@ -112,6 +114,8 @@ public class MainActivity extends AppCompatActivity implements GoogleMap.OnMarke
     private static final String TAG = MainActivity.class.getSimpleName();
 
     private static final int REQUEST_PERMISSIONS_REQUEST_CODE = 34;
+
+    private HashMap<String, LatLng> CurrentLoc = new HashMap<>();
 
     /**
      * Runs when the result of calling {@link #addGeofences()} and/or {@link #removeGeofences()}
@@ -482,8 +486,6 @@ public class MainActivity extends AppCompatActivity implements GoogleMap.OnMarke
 
         mGeofencingClient = LocationServices.getGeofencingClient(this);
 
-
-
     }
 
     /**
@@ -706,6 +708,8 @@ public class MainActivity extends AppCompatActivity implements GoogleMap.OnMarke
                             getAddress();
                             System.out.println("Current_Location_address----------------------------"+mAddressOutput);
 
+                            CurrentLoc.put("CurrentLoc_geo", CURRENTLOCATION);
+
                         }
 
 
@@ -808,7 +812,7 @@ public class MainActivity extends AppCompatActivity implements GoogleMap.OnMarke
                     }
                 });
 
-      /*  mLocationCallback = new LocationCallback() {
+        mLocationCallback = new LocationCallback() {
             @Override
             public void onLocationResult(LocationResult locationResult) {
                 for (Location location : locationResult.getLocations()) {
@@ -822,23 +826,11 @@ public class MainActivity extends AppCompatActivity implements GoogleMap.OnMarke
                         System.out.println("updateUI_CTL_lat-------" + lat + ",  updateUI_CTL_log--------" + log);
                         CURRENTLOCATION = new LatLng(lat, log);
 
-                        float zoomLevel = (float) 16.0; //This goes up to 2        1
-
-
-                        CameraUpdate zoom = CameraUpdateFactory.zoomTo(15);
-                        mCLocation = googleMap.addMarker(new MarkerOptions()
-                                .position(CURRENTLOCATION)
-                                .draggable(true)
-                                .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE))
-                                .title("UPDATEDCurrentLocation"));
-                        mCLocation.setTag(0);
-
-                        googleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(CURRENTLOCATION, zoomLevel));
-                        googleMap.animateCamera(zoom);
+                        CurrentLoc.put("CurrentLoc_geo", CURRENTLOCATION);
                     }
                 }
             }
-        };*/
+        };
 
 
     }
