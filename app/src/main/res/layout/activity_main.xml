@@ -1,93 +1,163 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:card_view="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     tools:context="com.voyager.user.myapplication.MainActivity">
 
-    <com.google.android.gms.maps.MapView
-        android:id="@+id/map"
+    <android.support.v4.widget.DrawerLayout
+        android:id="@+id/drawer_layout"
         android:layout_width="match_parent"
-        android:layout_height="match_parent" />
+        android:layout_height="match_parent">
 
-    <TextView
-        android:layout_marginTop="@dimen/cast_expanded_controller_control_toolbar_min_height"
-        android:layout_width="match_parent"
-        android:layout_height="50dp"
-        android:text="Pick From Location"
-        android:paddingLeft="10dp"
-        android:paddingTop="10dp"
-        android:background="#ffffff"
-        android:onClick="searchLoc"
-        android:layout_marginLeft="25dp"
-        android:layout_marginRight="25dp"/>
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical">
 
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:orientation="horizontal"
-        android:gravity="center">
-        <!--<Button-->
-            <!--android:id="@+id/fetch_address_button"-->
-            <!--android:layout_width="wrap_content"-->
-            <!--android:layout_height="wrap_content"-->
-            <!--android:text="@string/fetch_address"-->
-            <!--android:onClick="fetchAddressButtonHandler" />-->
+            <android.support.v7.widget.Toolbar
+                android:id="@+id/toolbar"
+                android:layout_width="match_parent"
+                android:layout_height="?attr/actionBarSize"
+                android:background="?attr/colorPrimary"
+                android:elevation="4dp"
+                android:visibility="visible"
+                app:contentInsetLeft="0dp"
+                app:contentInsetStart="0dp" />
 
-        <!--<ProgressBar-->
-            <!--android:id="@+id/progress_bar"-->
-            <!--android:layout_width="wrap_content"-->
-            <!--android:layout_height="wrap_content"-->
-            <!--android:layout_centerInParent="true" />-->
+            <FrameLayout
+                android:layout_width="match_parent"
+                android:layout_height="match_parent">
 
-        <!--<TextView-->
-            <!--android:id="@+id/location_address_view"-->
-            <!--android:layout_width="wrap_content"-->
-            <!--android:layout_height="wrap_content"-->
-            <!--android:layout_alignParentLeft="true"-->
-            <!--android:layout_alignParentStart="true"-->
-            <!--android:layout_alignParentTop="true"-->
-            <!--android:layout_marginTop="@dimen/text_margin_top"-->
-            <!--android:textSize="@dimen/default_text_size" />-->
 
-        <Button
-            android:id="@+id/add_geofences_button"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:onClick="addGeofencesButtonHandler"
-            android:text="@string/add_geofences" />
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="50dp"
+                    android:layout_marginLeft="25dp"
+                    android:layout_marginRight="25dp"
+                    android:layout_marginTop="@dimen/cast_expanded_controller_control_toolbar_min_height"
+                    android:background="#ffffff"
+                    android:onClick="searchLoc"
+                    android:paddingLeft="10dp"
+                    android:paddingTop="10dp"
+                    android:text="Pick From Location"
+                    android:visibility="invisible" />
 
-        <Button
-            android:id="@+id/remove_geofences_button"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:onClick="removeGeofencesButtonHandler"
-            android:text="@string/remove_geofences" />
-    </LinearLayout>
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:gravity="center"
+                    android:orientation="horizontal"
+                    android:visibility="invisible">
 
+                    <Button
+                        android:id="@+id/add_geofences_button"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:onClick="addGeofencesButtonHandler"
+                        android:text="@string/add_geofences" />
+
+                    <Button
+                        android:id="@+id/remove_geofences_button"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:onClick="removeGeofencesButtonHandler"
+                        android:text="@string/remove_geofences" />
+                </LinearLayout>
+
+                <android.support.v7.widget.CardView
+                    android:id="@+id/cardview"
+                    android:layout_width="fill_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginLeft="20dp"
+                    android:layout_marginRight="20dp"
+                    android:layout_marginTop="20dp"
+                    android:elevation="100dp"
+                    card_view:cardBackgroundColor="@android:color/white"
+                    card_view:cardCornerRadius="8dp">
+
+                    <FrameLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content">
+
+                        <LinearLayout
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:padding="20dp">
+
+                            <AutoCompleteTextView
+                                android:id="@+id/start"
+                                android:layout_width="fill_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginBottom="10dp"
+                                android:background="@android:color/transparent"
+                                android:hint="Choose a starting point..." />
+
+                            <View
+                                android:layout_width="match_parent"
+                                android:layout_height="5dp"
+                                android:layout_marginBottom="5dp"
+                                android:layout_marginRight="50dp"
+                                android:layout_marginTop="5dp"
+                                android:background="@drawable/dotted" />
+
+                            <AutoCompleteTextView
+                                android:id="@+id/destination"
+                                android:layout_width="fill_parent"
+                                android:layout_height="wrap_content"
+                                android:background="@android:color/transparent"
+                                android:hint="Choose a destination..." />
+                        </LinearLayout>
+
+                        <ImageView
+                            android:id="@+id/send"
+                            android:layout_width="36dp"
+                            android:layout_height="36dp"
+                            android:layout_gravity="center|right"
+                            android:layout_marginLeft="20dp"
+                            android:layout_marginRight="20dp"
+                            android:src="@drawable/ic_send_grey600_48dp" />
+
+                    </FrameLayout>
+                </android.support.v7.widget.CardView>
+
+                <com.google.android.gms.maps.MapView
+                    android:id="@+id/map"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent" />
+
+            </FrameLayout>
+
+
+        </LinearLayout>
+
+        <android.support.design.widget.NavigationView
+            android:id="@+id/navigation_view"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_gravity="start"
+            app:headerLayout="@layout/drawer_header"
+            app:itemBackground="@android:color/transparent"
+            app:menu="@menu/nav_drawer_item_list">
+
+            <TextView
+                android:id="@+id/main_activity_version_name"
+                android:layout_width="@dimen/_100"
+                android:layout_height="@dimen/_30"
+                android:layout_gravity="bottom|center"
+                android:layout_marginBottom="@dimen/_08"
+                android:alpha=".5"
+                android:gravity="bottom|center" />
+
+        </android.support.design.widget.NavigationView>
+
+
+    </android.support.v4.widget.DrawerLayout>
 
 
 </FrameLayout>
-
-<!--<fragment xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:id="@+id/map"
-    tools:context="com.voyager.user.myapplication.MainActivity"
-    tools:layout="@layout/dummy_mapviewfragment"
-    android:name="com.google.android.gms.maps.SupportMapFragment" >
-
-
-    <EditText
-        android:id="@+id/splashscreen"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="top" />
-
-
-
-
-</fragment>-->

@@ -48,7 +48,7 @@ public class FetchAddressIntentService extends IntentService {
         String dataString = intent.getDataString();
 
 
-// Get the location passed to this service through an extra.
+        // Get the location passed to this service through an extra.
         Location location = intent.getParcelableExtra(
                 Constants.LOCATION_DATA_EXTRA);
 

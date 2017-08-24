@@ -9,6 +9,7 @@ import android.content.IntentSender;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 
+import android.content.res.Configuration;
 import android.location.Criteria;
 import android.location.Geocoder;
 import android.net.Uri;
@@ -19,11 +20,18 @@ import android.preference.PreferenceManager;
 import android.provider.Settings;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
+import android.support.design.widget.NavigationView;
 import android.support.design.widget.Snackbar;
 import android.support.v4.app.ActivityCompat;
+import android.support.v4.app.FragmentTransaction;
 import android.support.v4.os.ResultReceiver;
+import android.support.v4.view.GravityCompat;
+import android.support.v4.widget.DrawerLayout;
+import android.support.v7.app.ActionBarDrawerToggle;
 import android.support.v7.app.AppCompatActivity;
+import android.support.v7.widget.Toolbar;
 import android.util.Log;
+import android.view.MenuItem;
 import android.view.View;
 import android.widget.Button;
 import android.widget.ProgressBar;
@@ -117,48 +125,11 @@ public class MainActivity extends AppCompatActivity implements GoogleMap.OnMarke
 
     private HashMap<String, LatLng> CurrentLoc = new HashMap<>();
 
-    /**
-     * Runs when the result of calling {@link #addGeofences()} and/or {@link #removeGeofences()}
-     * is available.
-     * @param task the resulting Task, containing either a result or error.
-     */
-    @Override
-    public void onComplete(@NonNull Task<Void> task) {
-        mPendingGeofenceTask = PendingGeofenceTask.NONE;
-        if (task.isSuccessful()) {
-            updateGeofencesAdded(!getGeofencesAdded());
-            setButtonsEnabledState();
+    private NavigationView mDrawerListView;
+    private DrawerLayout mDrawerLayout;
+    private Toolbar toolbar, toolbar_search;
+    private ActionBarDrawerToggle mDrawerToggle;
 
-            int messageId = getGeofencesAdded() ? R.string.geofences_added :
-                    R.string.geofences_removed;
-            Toast.makeText(this, getString(messageId), Toast.LENGTH_SHORT).show();
-        } else {
-            // Get the status code for the error and log it using a user-friendly message.
-            String errorMessage = GeofenceErrorMessages.getErrorString(this, task.getException());
-            Log.w(TAG, errorMessage);
-        }
-    }
-
-    /**
-     * Returns true if geofences were added, otherwise false.
-     */
-    private boolean getGeofencesAdded() {
-        return PreferenceManager.getDefaultSharedPreferences(this).getBoolean(
-                Constants.GEOFENCES_ADDED_KEY, false);
-    }
-
-
-    /**
-     * Stores whether geofences were added ore removed in {@link SharedPreferences};
-     *
-     * @param added Whether geofences were added or removed.
-     */
-    private void updateGeofencesAdded(boolean added) {
-        PreferenceManager.getDefaultSharedPreferences(this)
-                .edit()
-                .putBoolean(Constants.GEOFENCES_ADDED_KEY, added)
-                .apply();
-    }
 
 
     /**
@@ -258,8 +229,66 @@ public class MainActivity extends AppCompatActivity implements GoogleMap.OnMarke
         updateValuesFromBundle(savedInstanceState);
 
         initialize();
+        addDrawerItems();
+        setupDrawer();
         createLocationRequest();
         updateUIWidgets();
+
+    }
+
+
+    public void initialize() {
+
+        activity = this;
+
+        mMapView = (MapView) findViewById(R.id.map);
+        mMapView.onCreate(mapViewBundle);
+        mMapView.getMapAsync(this);
+
+        locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+        Criteria criteria = new Criteria();
+        mprovider = locationManager.getBestProvider(criteria, false);
+        mFusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
+
+        mResultReceiver = new AddressResultReceiver(new Handler());
+
+        // Set defaults, then update using values stored in the Bundle.
+        mAddressRequested = false;
+        mAddressOutput = "";
+
+
+        mGeofencingClient = LocationServices.getGeofencingClient(this);
+
+
+        // Get the UI widgets.
+        mAddGeofencesButton = (Button) findViewById(R.id.add_geofences_button);
+        mRemoveGeofencesButton = (Button) findViewById(R.id.remove_geofences_button);
+
+        // Empty list for storing geofences.
+        mGeofenceList = new ArrayList<>();
+
+        // Initially set the PendingIntent used in addGeofences() and removeGeofences() to null.
+        mGeofencePendingIntent = null;
+
+        setButtonsEnabledState();
+
+        // Get the geofences used. Geofence data is hard coded in this sample.
+        populateGeofenceList();
+
+        mGeofencingClient = LocationServices.getGeofencingClient(this);
+
+
+        mDrawerListView = (NavigationView) findViewById(R.id.navigation_view);
+        mDrawerLayout = (DrawerLayout) findViewById(R.id.drawer_layout);
+
+
+
+        setSupportActionBar(toolbar);
+        toolbar = (Toolbar) findViewById(R.id.toolbar);
+        setSupportActionBar(toolbar);
+        getSupportActionBar().setDisplayHomeAsUpEnabled(true);
+        getSupportActionBar().setTitle(getString(R.string.app_name));
+
 
     }
 
@@ -271,6 +300,157 @@ public class MainActivity extends AppCompatActivity implements GoogleMap.OnMarke
                 android.Manifest.permission.ACCESS_FINE_LOCATION);
         return permissionState == PackageManager.PERMISSION_GRANTED;
     }
+
+
+    /**
+     * Runs when the result of calling {@link #addGeofences()} and/or {@link #removeGeofences()}
+     * is available.
+     * @param task the resulting Task, containing either a result or error.
+     */
+    @Override
+    public void onComplete(@NonNull Task<Void> task) {
+        mPendingGeofenceTask = PendingGeofenceTask.NONE;
+        if (task.isSuccessful()) {
+            updateGeofencesAdded(!getGeofencesAdded());
+            setButtonsEnabledState();
+
+            int messageId = getGeofencesAdded() ? R.string.geofences_added :
+                    R.string.geofences_removed;
+            Toast.makeText(this, getString(messageId), Toast.LENGTH_SHORT).show();
+        } else {
+            // Get the status code for the error and log it using a user-friendly message.
+            String errorMessage = GeofenceErrorMessages.getErrorString(this, task.getException());
+            Log.w(TAG, errorMessage);
+        }
+    }
+
+    /**
+     * Returns true if geofences were added, otherwise false.
+     */
+    private boolean getGeofencesAdded() {
+        return PreferenceManager.getDefaultSharedPreferences(this).getBoolean(
+                Constants.GEOFENCES_ADDED_KEY, false);
+    }
+
+
+    /**
+     * Stores whether geofences were added ore removed in {@link SharedPreferences};
+     *
+     * @param added Whether geofences were added or removed.
+     */
+    private void updateGeofencesAdded(boolean added) {
+        PreferenceManager.getDefaultSharedPreferences(this)
+                .edit()
+                .putBoolean(Constants.GEOFENCES_ADDED_KEY, added)
+                .apply();
+    }
+
+
+
+    /**
+     * this method is used to set the drawer item and initializes its click event in navigation drawer.
+     */
+    private void addDrawerItems() {
+        mDrawerListView.setNavigationItemSelectedListener(new NavigationView.OnNavigationItemSelectedListener() {
+            @Override
+            public boolean onNavigationItemSelected(MenuItem menuItem) {
+                //Checking if the item is in checked state or not, if not make it in checked state
+                if (menuItem.isChecked()) menuItem.setChecked(false);
+                else menuItem.setChecked(false);
+                //Closing drawer on item click
+                mDrawerLayout.closeDrawers();
+                //Check to see which item was being clicked and perform appropriate action
+                FragmentTransaction fragmentTransaction;
+
+                switch (menuItem.getItemId()) {
+
+                    //Replacing the main content with ContentFragment Which is our Inbox View;
+                    case R.id.home_drawer:
+
+
+                        return true;
+
+                    // For rest of the options we just show a toast on click
+
+                    case R.id.profile_drawer:
+
+                        return true;
+
+
+                    default:
+
+                        return true;
+
+                }
+            }
+        });
+    }
+
+    /**
+     * this method is used to set up navigation drawer Close and open states
+     */
+    private void setupDrawer() {
+        mDrawerToggle = new ActionBarDrawerToggle(this, mDrawerLayout, R.string.drawer_open, R.string.drawer_close) {
+            /** Called when a drawer has settled in a completely open state. */
+            public void onDrawerOpened(View drawerView) {
+                super.onDrawerOpened(drawerView);
+               // mDrawerLayout.openDrawer(Gravity.LEFT);
+                invalidateOptionsMenu(); // creates call to onPrepareOptionsMenu()
+            }
+
+            /** Called when a drawer has settled in a completely closed state. */
+            public void onDrawerClosed(View view) {
+                super.onDrawerClosed(view);
+                invalidateOptionsMenu(); // creates call to onPrepareOptionsMenu()
+            }
+
+
+        };
+
+        mDrawerLayout.setDrawerListener(mDrawerToggle);
+        mDrawerLayout.post(new Runnable() {
+            @Override
+            public void run() {
+                mDrawerToggle.syncState();
+            }
+        });
+    }
+
+    /**
+     * this method is used to set the Boolean Check in what state its current in
+     *
+     * @param isEnabled Boolean value to state open or close
+     */
+    public void setDrawerState(boolean isEnabled) {
+        if (isEnabled) {
+            mDrawerLayout.setDrawerLockMode(DrawerLayout.LOCK_MODE_UNLOCKED);
+            mDrawerToggle.onDrawerStateChanged(DrawerLayout.LOCK_MODE_UNLOCKED);
+            mDrawerToggle.setDrawerIndicatorEnabled(true);
+            mDrawerToggle.syncState();
+            this.getSupportActionBar().setHomeButtonEnabled(true);
+
+        } else {
+            mDrawerLayout.setDrawerLockMode(DrawerLayout.LOCK_MODE_LOCKED_CLOSED);
+            mDrawerToggle.onDrawerStateChanged(DrawerLayout.LOCK_MODE_LOCKED_CLOSED);
+            mDrawerToggle.setDrawerIndicatorEnabled(false);
+            mDrawerToggle.syncState();
+            this.getSupportActionBar().setHomeButtonEnabled(false);
+        }
+    }
+
+    @Override
+    protected void onPostCreate(Bundle savedInstanceState) {
+        super.onPostCreate(savedInstanceState);
+        // Sync the toggle state after onRestoreInstanceState has occurred.
+        mDrawerToggle.syncState();
+    }
+
+    @Override
+    public void onConfigurationChanged(Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        mDrawerToggle.onConfigurationChanged(newConfig);
+    }
+
 
 
     /**
@@ -400,17 +580,7 @@ public class MainActivity extends AppCompatActivity implements GoogleMap.OnMarke
 
 
     private void updateValuesFromBundle(Bundle savedInstanceState) {
-     /*   // Update the value of mRequestingLocationUpdates from the Bundle.
-        if (savedInstanceState != null) {
-            if (savedInstanceState.keySet().contains(REQUESTING_LOCATION_UPDATES_KEY)) {
-                mRequestingLocationUpdates = savedInstanceState.getBoolean(
-                        REQUESTING_LOCATION_UPDATES_KEY);
-            }
-        }
 
-        // Update UI to match restored state
-        System.out.println("updateValuesFromBundle----------------------------1");
-        updateUI();*/
         if (savedInstanceState != null) {
             System.out.println("updateValuesFromBundle_NonNull----------------------------1");
 
@@ -446,47 +616,7 @@ public class MainActivity extends AppCompatActivity implements GoogleMap.OnMarke
     }
 
 
-    public void initialize() {
 
-        activity = this;
-
-        mMapView = (MapView) findViewById(R.id.map);
-        mMapView.onCreate(mapViewBundle);
-        mMapView.getMapAsync(this);
-
-        locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
-        Criteria criteria = new Criteria();
-        mprovider = locationManager.getBestProvider(criteria, false);
-        mFusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
-
-        mResultReceiver = new AddressResultReceiver(new Handler());
-
-        // Set defaults, then update using values stored in the Bundle.
-        mAddressRequested = false;
-        mAddressOutput = "";
-
-
-        mGeofencingClient = LocationServices.getGeofencingClient(this);
-
-
-        // Get the UI widgets.
-        mAddGeofencesButton = (Button) findViewById(R.id.add_geofences_button);
-        mRemoveGeofencesButton = (Button) findViewById(R.id.remove_geofences_button);
-
-        // Empty list for storing geofences.
-        mGeofenceList = new ArrayList<>();
-
-        // Initially set the PendingIntent used in addGeofences() and removeGeofences() to null.
-        mGeofencePendingIntent = null;
-
-        setButtonsEnabledState();
-
-        // Get the geofences used. Geofence data is hard coded in this sample.
-        populateGeofenceList();
-
-        mGeofencingClient = LocationServices.getGeofencingClient(this);
-
-    }
 
     /**
      * Removes geofences, which stops further notifications when the device enters or exits
@@ -646,28 +776,6 @@ public class MainActivity extends AppCompatActivity implements GoogleMap.OnMarke
 
 
     public void setUpMap() {
-
-      /*  if (mprovider != null && !mprovider.equals("")) {
-
-            if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-                // TODO: Consider calling
-                //    ActivityCompat#requestPermissions
-                // here to request the missing permissions, and then overriding
-                //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
-                //                                          int[] grantResults)
-                // to handle the case where the user grants the permission. See the documentation
-                // for ActivityCompat#requestPermissions for more details.
-                return;
-            }
-            Location location = locationManager.getLastKnownLocation(mprovider);
-            locationManager.requestLocationUpdates(mprovider, 15000, 1, this);
-
-            if (location != null) {
-                onLocationChanged(location);
-            } else {
-                Toast.makeText(getBaseContext(), "No Location Provider Found Check Your Code", Toast.LENGTH_SHORT).show();
-            }
-        }*/
 
         if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             // TODO: Consider calling
@@ -1176,6 +1284,28 @@ public class MainActivity extends AppCompatActivity implements GoogleMap.OnMarke
                         });
             }
         }
+    }
+
+
+
+
+    @Override
+    public boolean onOptionsItemSelected(MenuItem item) {
+        int id = item.getItemId();
+        switch (id) {
+            case android.R.id.home:
+
+                if (mDrawerToggle.isDrawerIndicatorEnabled()) {
+                    mDrawerLayout.openDrawer(GravityCompat.START);
+
+
+                } else {
+                    onBackPressed();
+                }
+                return true;
+        }
+
+        return super.onOptionsItemSelected(item);
     }
 
 }
