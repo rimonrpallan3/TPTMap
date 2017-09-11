@@ -41,7 +41,7 @@
             android:value="@integer/google_play_services_version" />
         <meta-data
             android:name="com.google.android.maps.v2.API_KEY"
-            android:value="AIzaSyBPyc_F68_dGyXlGWALfEa9WzK6mCwrkPA"/>
+            android:value="AIzaSyAzQTyTsWMbYUvMgD0lqb6NV2BYV6PZ9Vs"/>
         <service
             android:name=".FetchAddressIntentService"
             android:exported="false"/>
