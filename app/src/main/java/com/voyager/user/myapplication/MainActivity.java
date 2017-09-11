@@ -1615,9 +1615,6 @@ public class MainActivity extends AppCompatActivity implements RoutingListener, 
 
 
 
-
-
-
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
         int id = item.getItemId();
