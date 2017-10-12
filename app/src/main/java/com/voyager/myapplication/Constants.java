@@ -1,4 +1,4 @@
-package com.voyager.user.myapplication;
+package com.voyager.myapplication;
 
 import com.google.android.gms.maps.model.LatLng;
 
@@ -12,7 +12,7 @@ public class Constants {
     public static final int SUCCESS_RESULT = 0;
     public static final int FAILURE_RESULT = 1;
     public static final String PACKAGE_NAME =
-            "com.voyager.user.myapplication";
+            "com.voyager.myapplication";
     public static final String RECEIVER = PACKAGE_NAME + ".RECEIVER";
     public static final String RESULT_DATA_KEY = PACKAGE_NAME +
             ".RESULT_DATA_KEY";

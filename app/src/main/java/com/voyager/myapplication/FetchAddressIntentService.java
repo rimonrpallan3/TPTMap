@@ -1,4 +1,4 @@
-package com.voyager.user.myapplication;
+package com.voyager.myapplication;
 
 import android.app.IntentService;
 import android.content.Intent;

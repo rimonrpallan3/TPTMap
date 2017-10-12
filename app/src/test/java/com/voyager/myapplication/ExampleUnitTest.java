@@ -1,4 +1,4 @@
-package com.voyager.user.myapplication;
+package com.voyager.myapplication;
 
 import org.junit.Test;
 

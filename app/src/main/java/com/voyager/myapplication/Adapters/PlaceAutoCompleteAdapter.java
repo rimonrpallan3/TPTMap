@@ -1,4 +1,4 @@
-package com.voyager.user.myapplication.Adapters;
+package com.voyager.myapplication.Adapters;
 
 import android.content.Context;
 import android.util.Log;

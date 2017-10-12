@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.voyager.user.myapplication;
+package com.voyager.myapplication;
 
 import android.content.Context;
 import android.content.res.Resources;
